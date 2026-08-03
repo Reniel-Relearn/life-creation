@@ -19,7 +19,7 @@ doctrine (the "Rule of Threes"), extended by two steps.
 
 | Need | Fails in | Domain | How the player sees it |
 |---|---|---|---|
-| Air | ~3 minutes | Body | Number |
+| Air | ~3 minutes | Body | *Not implemented — see below* |
 | Warmth / shelter | ~3 hours | Body | Number |
 | Water | ~3 days | Body | Number |
 | Food | ~3 weeks | Body | Number |
@@ -47,6 +47,15 @@ prayed to.
 **Anti-chore rule:** Body has bars. Soul has sentences. Spirit has nothing. Three
 needs, three levels of visibility. This is what stops the game becoming "feed three
 meters."
+
+**Air, and why there is no air meter.** The Rule of Threes starts at three minutes
+without air, so the table lists it. It is deliberately *not* built. A breathing bar
+that drains during ordinary play is exactly the chore the anti-chore rule exists to
+prevent: it would tick down forever and be refilled by doing nothing, which is the
+worst kind of meter. Air is reserved as future support for **exceptional
+conditions only** — drowning, smoke, a collapsed space — and no such condition
+exists yet. When one arrives, air becomes a temporary timer that appears with the
+danger and vanishes with it, never a permanent gauge.
 
 ---
 
@@ -99,6 +108,13 @@ Starting ratio: **~1 real hour ≈ 1 game day** while away. Configurable in
 ### Aging
 
 One run = one life, 60–70 years. Effort ceiling falls with age. Permadeath, one save.
+
+**Not in this slice, and deliberately not faked.** The graphical vertical slice runs
+on minutes, hours and days. It does not simulate a lifetime, and it does not reach
+one by making time pass absurdly fast — a sixty-year life compressed into an evening
+would be a number going up, not a life. What exists now is the groundwork:
+`Clock.step` is a variable, `Player.age_days` is a real field, and the tick is
+already chunked so a widening step cannot skip over the moment of death.
 
 ### Development requirement
 
@@ -194,50 +210,75 @@ Flat. Twelve modules. Split only when a file actually gets big.
 life-creation/                  (repo root)
 ├── main.py                     entry point — python main.py
 ├── DESIGN.md                   this file
+├── pyproject.toml              dependencies, pytest config
+├── assets/                     empty; art is drawn procedurally at start-up
 ├── life_creation/
-│   ├── __init__.py
-│   ├── config.py               all tunables: rates, ratios, map size
-│   ├── clock.py                game time, turns, real-time absence math
-│   ├── world.py                grid, terrain, procedural generation
+│   ├── config.py               all tunables: rates, ratios, map size, timings
+│   │
+│   │                           — the simulation —
+│   ├── clock.py                game time, phases, variable step, debug scale
+│   ├── world.py                grid, terrain, generation, validation
 │   ├── player.py               the character
 │   ├── needs.py                Body / Soul / Spirit definitions and decay
+│   ├── fire.py                 fire as an object: fuel, warmth, light
+│   ├── perception.py           sight radius, fog of war, Spirit's widening
 │   ├── actions.py              what can be done, costs, effects
 │   ├── skills.py               growth by doing
-│   ├── game.py                 the loop; owns the rules and the simulation
+│   ├── game.py                 the rules. Commands in, Outcomes out.
+│   ├── commands.py             what the player may ask for
+│   ├── outcomes.py             what the simulation says happened
 │   ├── chronicle.py            life record and ending text
-│   ├── window.py               tkinter front end - the default
-│   ├── ui.py                   terminal front end - `--terminal`
+│   ├── viewmodel.py            what the screen is allowed to know
+│   ├── agents.py               rule-based agents for the test harness
+│   │
+│   │                           — the controller —
+│   ├── application.py          input lock, turn gate, runs and restarts
+│   │
+│   │                           — the front ends —
+│   ├── ui.py                   terminal, optional debugging  `--terminal`
+│   └── presentation/           the game: arcade window, views, renderers
+│
 │   ├── absence.py              offline simulation on load      (Phase 3)
 │   └── save.py                 JSON persistence                (Phase 3)
-└── the-game-theory/            untouched
+├── tests/                      unit, integration, simulation, smoke
+└── tools/simulate.py           headless play, thousands of runs
 ```
+
+The twelve-module target in the original plan was a guideline, not a budget. The
+count grew where the code genuinely split along a seam — fire, perception,
+commands, outcomes — and nowhere else.
 
 ### Architectural rules
 
-1. **Game logic never prints.** Only the front-end modules (`window.py`,
-   `ui.py`) touch the screen or read keys. Everything else returns data.
-   This has already paid for itself: adding the windowed front end changed
-   no simulation code at all.
-2. **Standard library only.** No third-party dependencies. `python main.py` with no
-   install step.
+1. **Game logic never prints and never draws.** Only the front ends
+   (`presentation/`, `ui.py`) touch the screen or read keys. Everything else
+   returns data. This has paid for itself twice now: the windowed front end and
+   then the graphical one both arrived without changing a single rule.
+2. **The simulation imports no graphics framework.** Dependencies run one way —
+   presentation → application → simulation — and never back. Enforced by
+   `tests/smoke/test_architecture.py`, which parses every simulation module and
+   fails on a forbidden import.
 3. **All tunables live in `config.py`.** No magic numbers in system code.
+4. **Every random draw comes from a seeded generator.** The global `random`
+   stream is never used, or seeds would not reproduce. Also enforced by test.
 
-### Terminal handling (stdlib)
+### Front ends
 
-- Colour: ANSI escapes, with VT processing enabled on Windows via `ctypes`.
-- Input: single keypress via `msvcrt` on Windows, `termios`/`tty` fallback on Unix.
-  Both wrapped behind one function in `ui.py`.
+- **Graphical (default).** Arcade 3.3. Procedurally generated tile textures,
+  animated water and flame, layered lighting, a following camera.
+- **Terminal (`--terminal`).** Kept only as a debugging interface, for a machine
+  with no working OpenGL. ANSI escapes with VT processing enabled on Windows via
+  `ctypes`; single keypress via `msvcrt`, with a `termios`/`tty` fallback.
 
 ---
 
 ## 7. Repo decisions
 
 - The game **is** the repo's purpose. The remote is already named `life-creation`.
-- `the-game-theory/` is left exactly where it is, untouched. It costs nothing and it
-  is real project history. It gets folded into an `archive/` note when the README is
-  rewritten in Phase 5.
-- `README.md` still describes the game-theory experiment. Rewritten in Phase 5, not
-  before.
+- `the-game-theory/` was removed in commit `899ad83`, when the game first landed.
+  This paragraph used to say it was being kept untouched; it is recorded here as
+  history rather than quietly deleted.
+- `README.md` describes the game.
 - Entry point is a root-level `main.py`.
 
 ---
@@ -246,11 +287,12 @@ life-creation/                  (repo root)
 
 The smallest thing that proves the concept and is playable tonight.
 
-1. `python main.py` runs with no install step
+1. `python main.py` opens the graphical game (after `pip install -r requirements.txt`)
 2. Opening screen: *How will you live your life?* → asks a name, nothing else
-3. Flat square grid (~60×30), procedurally generated, several terrain types
-4. ASCII render with colour: map, status panel, event log
-5. Single-key movement, turn-based
+3. Flat square grid (64×40), procedurally generated, several terrain types
+4. Rendered terrain tiles, animated water and flame, layered day/night lighting,
+   fog of war with memory, a quiet HUD
+5. Single-key movement, turn-based, one keypress = one turn
 6. Clock advancing, day/night
 7. **Body** needs ticking at Rule-of-Threes rates: water, food, warmth, rest
 8. 4–5 actions: drink, forage, gather wood, rest, build fire
@@ -290,7 +332,10 @@ Deferred to later phases, listed so nobody quietly builds them:
 | Decision | |
 |---|---|
 | Name | Life Creation |
-| Platform | Terminal, ASCII, **standard library only** |
+| Platform | **Graphical Python desktop application** |
+| Gameplay | **Turn-based.** The simulation advances only when an action resolves. |
+| Framework | **Arcade 3.3.** Verified working before the migration began. |
+| Terminal mode | **Optional debugging interface only** (`--terminal`) |
 | Opening | You wake. No backstory, no explanation. Asked only a name. |
 | Character creation | None. Skills grow by doing. |
 | Needs | Body (numbers) / Soul (prose) / Spirit (invisible) |

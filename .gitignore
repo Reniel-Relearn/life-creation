@@ -10,3 +10,8 @@ venv/
 # Saved games (Phase 3)
 *.save
 saves/
+
+# Build artifacts
+dist/
+build/
+*.spec

@@ -1,13 +1,24 @@
 """Game time.
 
-One clock, measured in minutes since the character woke. `step` is a variable,
-not a constant - the MVP never changes it, but the widening time step later
-(hours to days to seasons) depends on it already being one.
+One authoritative clock, measured in minutes since the character woke. `step`
+is a variable, not a constant - the MVP never changes it, but the widening time
+step later (hours to days to seasons) depends on it already being one.
 """
 
+from __future__ import annotations
+
+import math
 from dataclasses import dataclass
+from enum import Enum
 
 from . import config
+
+
+class Phase(str, Enum):
+    DAWN = "dawn"
+    DAY = "day"
+    DUSK = "dusk"
+    NIGHT = "night"
 
 
 @dataclass
@@ -17,8 +28,16 @@ class Clock:
     minutes: int = config.DAWN_HOUR * config.MINUTES_PER_HOUR
     step: int = config.DEFAULT_STEP_MINUTES
 
-    def advance(self, minutes: int) -> None:
+    # Debug time acceleration. 1.0 in ordinary play; only the developer flags
+    # in main.py ever set it to anything else.
+    scale: float = 1.0
+
+    def advance(self, minutes: float) -> None:
         self.minutes += int(minutes)
+
+    def scaled(self, minutes: float) -> float:
+        """Apply debug acceleration to a cost in minutes."""
+        return minutes * self.scale
 
     # -- readings -----------------------------------------------------------
 
@@ -44,17 +63,17 @@ class Clock:
         return not (config.DAWN_HOUR <= self.hour < config.DUSK_HOUR)
 
     @property
-    def phase(self) -> str:
+    def phase(self) -> Phase:
         h = self.hour
-        if h < config.DAWN_HOUR - 1:
-            return "night"
-        if h < config.DAWN_HOUR + 1:
-            return "dawn"
-        if h < config.DUSK_HOUR - 1:
-            return "day"
-        if h < config.DUSK_HOUR + 1:
-            return "dusk"
-        return "night"
+        if h < config.DAWN_HOUR - config.TWILIGHT_HOURS:
+            return Phase.NIGHT
+        if h < config.DAWN_HOUR + config.TWILIGHT_HOURS:
+            return Phase.DAWN
+        if h < config.DUSK_HOUR - config.TWILIGHT_HOURS:
+            return Phase.DAY
+        if h < config.DUSK_HOUR + config.TWILIGHT_HOURS:
+            return Phase.DUSK
+        return Phase.NIGHT
 
     def clock_text(self) -> str:
         return f"{self.hour:02d}:{self.minute:02d}"
@@ -68,17 +87,17 @@ class Clock:
             delta += config.MINUTES_PER_DAY
         return delta
 
+    def minutes_until_dawn(self) -> int:
+        return self.minutes_until_hour(config.DAWN_HOUR)
+
     def ambient_temperature(self) -> float:
         """A smooth day/night temperature curve.
 
         Coldest just before dawn, warmest mid-afternoon. Cold is the fastest
         killer in the game, so this curve matters more than it looks.
         """
-        import math
-
-        # Peak at 15:00, trough at 03:00.
-        fraction = (self.minute_of_day / config.MINUTES_PER_DAY)
-        angle = 2 * math.pi * (fraction - (15.0 / 24.0))
+        fraction = self.minute_of_day / config.MINUTES_PER_DAY
+        angle = 2 * math.pi * (fraction - (config.TEMP_PEAK_HOUR / config.HOURS_PER_DAY))
         swing = (config.TEMP_DAY - config.TEMP_NIGHT) / 2.0
         midpoint = (config.TEMP_DAY + config.TEMP_NIGHT) / 2.0
         return midpoint + swing * math.cos(angle)

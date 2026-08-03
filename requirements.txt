@@ -1,0 +1,7 @@
+arcade>=3.3,<4
+
+# Development
+pytest>=8
+
+# Optional, for building a Windows executable
+# pyinstaller>=6
