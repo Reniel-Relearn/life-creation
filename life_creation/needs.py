@@ -107,7 +107,9 @@ class Needs:
             self.health -= damage
             if self.health <= 0.0 and self.death_cause is None:
                 self.death_cause = cause
-        elif self.water > 25 and self.food > 25 and self.warmth > 40:
+        elif (self.water > config.HEALTH_REGEN_WATER_ABOVE
+                and self.food > config.HEALTH_REGEN_FOOD_ABOVE
+                and self.warmth > config.HEALTH_REGEN_WARMTH_ABOVE):
             self.health += config.HEALTH_REGEN * minutes
 
     def clamp(self) -> None:

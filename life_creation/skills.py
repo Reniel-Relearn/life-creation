@@ -33,7 +33,10 @@ def practise(skills: dict[str, float], name: str,
     """Doing a thing makes you better at it. Diminishing near mastery."""
     current = skills.get(name, 0.0)
     headroom = 1.0 - (current / config.SKILL_MAX)
-    skills[name] = min(config.SKILL_MAX, current + amount * max(0.15, headroom))
+    skills[name] = min(
+        config.SKILL_MAX,
+        current + amount * max(config.SKILL_MIN_HEADROOM, headroom),
+    )
 
 
 def level(skills: dict[str, float], name: str) -> float:
@@ -41,13 +44,14 @@ def level(skills: dict[str, float], name: str) -> float:
 
 
 def describe(value: float) -> str:
-    if value >= 0.85:
+    """Competence in words. There is no skill tree and no number shown."""
+    if value >= config.SKILL_MASTERFUL_ABOVE:
         return "masterful"
-    if value >= 0.60:
+    if value >= config.SKILL_PRACTISED_ABOVE:
         return "practised"
-    if value >= 0.35:
+    if value >= config.SKILL_CAPABLE_ABOVE:
         return "capable"
-    if value >= 0.12:
+    if value >= config.SKILL_CLUMSY_ABOVE:
         return "clumsy"
     return "untried"
 

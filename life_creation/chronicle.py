@@ -4,6 +4,8 @@ There is no score. The game does not grade the life. It records what was
 actually done and reads it back, in order, and stops.
 """
 
+from __future__ import annotations
+
 from dataclasses import dataclass, field
 
 from . import config, skills
@@ -11,11 +13,23 @@ from . import config, skills
 
 @dataclass
 class Chronicle:
+    # One-time milestones. `mark` is idempotent: a milestone happens once.
     marks: dict[str, tuple[int, str]] = field(default_factory=dict)
+
+    # The running record the ending is composed from.
+    entries: list[tuple[int, str]] = field(default_factory=list)
+    minutes_by_action: dict[str, int] = field(default_factory=dict)
+    counts_by_action: dict[str, int] = field(default_factory=dict)
+    terrain_discovered: set[str] = field(default_factory=set)
+    water_sources: set[tuple[int, int]] = field(default_factory=set)
+    fires_made: int = 0
+
+    # -- milestones ---------------------------------------------------------
 
     def mark(self, key: str, clock, text: str) -> None:
         if key not in self.marks:
             self.marks[key] = (clock.day, text)
+            self.note(clock.minutes, text)
 
     def has(self, key: str) -> bool:
         return key in self.marks
@@ -23,6 +37,37 @@ class Chronicle:
     def day_of(self, key: str) -> int | None:
         entry = self.marks.get(key)
         return entry[0] if entry else None
+
+    # -- the running record -------------------------------------------------
+
+    def note(self, game_minutes: int, text: str) -> None:
+        self.entries.append((game_minutes, text))
+        if len(self.entries) > config.MAX_CHRONICLE_ENTRIES:
+            del self.entries[0]
+
+    def record_action(self, key: str, minutes: int) -> None:
+        self.counts_by_action[key] = self.counts_by_action.get(key, 0) + 1
+        self.minutes_by_action[key] = self.minutes_by_action.get(key, 0) + minutes
+
+    def discovered_terrain(self, name: str) -> None:
+        self.terrain_discovered.add(name)
+
+    def found_water(self, x: int, y: int) -> None:
+        self.water_sources.add((x, y))
+
+    def fire_made(self) -> None:
+        self.fires_made += 1
+
+    # -- readings -----------------------------------------------------------
+
+    def hours_spent(self, key: str) -> float:
+        return self.minutes_by_action.get(key, 0) / config.MINUTES_PER_HOUR
+
+    def most_time_on(self) -> tuple[str, int]:
+        if not self.minutes_by_action:
+            return ("", 0)
+        key = max(self.minutes_by_action, key=lambda k: self.minutes_by_action[k])
+        return key, self.minutes_by_action[key]
 
 
 _ACTION_PHRASES = {
@@ -83,10 +128,12 @@ def compose(player, clock, world, chronicle: Chronicle) -> list[str]:
     else:
         lines.append("You were still alive when you set this down.")
 
-    # What the days were spent on.
-    key, count = player.favourite_action()
-    if key and count > 2:
-        lines.append(_ACTION_PHRASES.get(key, ""))
+    # What the days were actually spent on - measured in hours, not tallies.
+    key, minutes = chronicle.most_time_on()
+    if key and minutes > config.MINUTES_PER_HOUR:
+        phrase = _ACTION_PHRASES.get(key, "")
+        if phrase:
+            lines.append(phrase)
 
     best_skill, best_level = skills.best(player.skills)
     if best_level > 0.05:
@@ -99,11 +146,22 @@ def compose(player, clock, world, chronicle: Chronicle) -> list[str]:
 
     # The world.
     lines.append(_fraction_seen(player, world))
+    if len(chronicle.terrain_discovered) >= 5:
+        lines.append("You stood in every kind of country this place has.")
+    if len(chronicle.water_sources) > 1:
+        lines.append(
+            f"You drank from {len(chronicle.water_sources)} different places."
+        )
 
     # Fire.
     fire_day = chronicle.day_of("first_fire")
     if fire_day:
         lines.append(f"You made fire on the {_ordinal(fire_day)} day.")
+        if chronicle.fires_made > 1:
+            lines.append(f"You made fire {chronicle.fires_made} times in all.")
+        tended = chronicle.hours_spent("b")
+        if tended >= 2:
+            lines.append(f"You gave {tended:.0f} hours to keeping it alight.")
     else:
         lines.append("You never made fire.")
 
@@ -125,10 +183,16 @@ def compose(player, clock, world, chronicle: Chronicle) -> list[str]:
     else:
         lines.append("You had stopped noticing the days a long time before.")
 
+    if player.longest_repeat >= config.MONOTONY_THRESHOLD * 2:
+        lines.append("There were long stretches where you did the same thing "
+                     "over and over.")
+
     # Spirit - shown here, once, and nowhere else in the entire game.
+    still_hours = chronicle.hours_spent("m")
     if needs.spirit >= config.START_SPIRIT + 8:
         lines.append(
-            "You made time to be still. It cost you days you could not spare, "
+            "You made time to be still. It cost you "
+            f"{still_hours:.0f} hours you could not spare, "
             "and nothing came of it that anyone could see."
         )
     elif needs.spirit >= config.START_SPIRIT - 2:
