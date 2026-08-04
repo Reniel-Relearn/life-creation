@@ -21,7 +21,8 @@ from ..hud import Hud
 from ..lighting import Lighting
 from ..particles import Particles
 from ..tile_renderer import TileRenderer
-from .base import BACKDROP
+from .. import theme
+from .base import BACKDROP, key_menu
 
 
 class GameView(arcade.View):
@@ -32,7 +33,9 @@ class GameView(arcade.View):
 
         game = session.game
         self.tiles = TileRenderer(game.world, app.assets)
-        self.hud = Hud(app.width, app.height)
+        self.hud = Hud(app.width, app.height,
+                       scrim=app.assets.scrim, scrim_top=app.assets.scrim_top,
+                       scrim_corner=app.assets.scrim_corner)
         self.particles = Particles(app.assets.ember)
         self.lighting = Lighting(app.assets, game.world.height, game.clock.phase)
 
@@ -65,9 +68,19 @@ class GameView(arcade.View):
 
     def refresh(self) -> None:
         game = self.session.game
-        self.tiles.refresh(game.visible())
+        self.tiles.refresh(game.visible(), self._sight_sources())
         self.hud.update(self.session.view())
         self._sync_fires()
+
+    def _sight_sources(self) -> list[tuple[int, int, int]]:
+        """Everything that lights the world, for the renderer's soft falloff.
+
+        The simulation decides what is visible; this only tells the renderer
+        where sight comes from so the edge of it can fade."""
+        game = self.session.game
+        sources = [(game.player.x, game.player.y, game.sight_radius())]
+        sources.extend((f.x, f.y, f.light_radius) for f in game.fires.lit_fires())
+        return sources
 
     def _sync_fires(self) -> None:
         game = self.session.game
@@ -227,6 +240,10 @@ class GameView(arcade.View):
         self.lighting.draw(self.camera.visible_bounds)
 
         self.window.default_camera.use()
+        if self.app.assets.vignette is not None:
+            arcade.draw_texture_rect(
+                self.app.assets.vignette,
+                arcade.LBWH(0, 0, self.window.width, self.window.height))
         self.hud.draw()
         if self.show_journal:
             self._draw_journal()
@@ -237,23 +254,35 @@ class GameView(arcade.View):
         from ... import skills as skills_mod
 
         game = self.session.game
-        lines = [f"{game.player.name}, day {game.clock.day}", ""]
-        for key in skills_mod.ALL:
-            level = skills_mod.level(game.player.skills, key)
-            lines.append(f"{skills_mod.LABELS[key]:<12}{skills_mod.describe(level)}")
-        lines.append("")
-        lines.append(f"seed {game.seed}")
+        skills = [
+            (skills_mod.LABELS[key],
+             skills_mod.describe(skills_mod.level(game.player.skills, key)))
+            for key in skills_mod.ALL
+        ]
 
         w, h = self.window.width, self.window.height
+        top = h * 0.68
         self._journal = [
-            arcade.Text(line, w // 2, h * 0.68 - i * 24, (206, 206, 216), 13,
-                        font_name=config.TEXT_FONT, anchor_x="center")
-            for i, line in enumerate(lines)
+            arcade.Text(f"{game.player.name}, day {game.clock.day}",
+                        w // 2, top, theme.INK, theme.HEADING,
+                        font_name=config.TEXT_FONT, anchor_x="center"),
         ]
+        # Competence in words, on the same two-column axis as every other list
+        # in the game. There is no skill tree and no number anywhere here.
+        self._journal.extend(
+            key_menu(self.window, tuple(skills), top - theme.SPACE_6,
+                     colour=theme.INK, key_colour=theme.MUTED))
+        self._journal.append(
+            arcade.Text(f"seed {game.seed}", w // 2,
+                        top - theme.SPACE_6 - len(skills) * theme.SPACE_3
+                        - theme.SPACE_4,
+                        theme.SUBTLE, theme.SMALL,
+                        font_name=config.TEXT_FONT, anchor_x="center"))
 
     def _draw_journal(self) -> None:
         w, h = self.window.width, self.window.height
         arcade.draw_lbwh_rectangle_filled(
-            w * 0.25, h * 0.22, w * 0.5, h * 0.58, (10, 12, 18, 232))
+            w * 0.24, h * 0.22, w * 0.52, h * 0.58,
+            theme.with_alpha(theme.SCRIM, 0.94))
         for text in self._journal:
             text.draw()

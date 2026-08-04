@@ -11,8 +11,8 @@ from __future__ import annotations
 
 import arcade
 
-from ... import config
-from .base import BACKDROP, DIM, FAINT, FONT, INK
+from .. import theme
+from .base import FONT
 
 LINE_DELAY = 0.42
 FINAL_LINE = "This is how you lived."
@@ -29,7 +29,7 @@ class ChronicleView(arcade.View):
         self._footer: arcade.Text | None = None
 
     def on_show_view(self) -> None:
-        self.window.background_color = BACKDROP
+        self.window.background_color = theme.BACKDROP
         w, h = self.window.width, self.window.height
 
         drawable = [line for line in self.lines]
@@ -38,15 +38,15 @@ class ChronicleView(arcade.View):
         for i, line in enumerate(drawable):
             final = line == FINAL_LINE
             self._texts.append(arcade.Text(
-                line, w // 2, top - i * 30,
-                (*INK, 0) if final else (*DIM, 0),
-                18 if final else 14,
+                line, w // 2, top - i * theme.SPACE_4,
+                theme.with_alpha(theme.INK if final else theme.MUTED, 0),
+                theme.HEADING if final else theme.BODY,
                 font_name=FONT, anchor_x="center", bold=final))
 
         self._footer = arcade.Text(
             "Enter   live another life          Esc   quit",
-            w // 2, h * 0.08, (*FAINT, 0), 12, font_name=FONT,
-            anchor_x="center")
+            w // 2, h * 0.07, theme.with_alpha(theme.SUBTLE, 0), theme.SMALL,
+            font_name=FONT, anchor_x="center")
         self.app.audio.transition()
 
     def on_update(self, delta_time: float) -> None:
@@ -54,12 +54,12 @@ class ChronicleView(arcade.View):
         for i, text in enumerate(self._texts):
             due = i * LINE_DELAY
             alpha = max(0.0, min(1.0, (self.elapsed - due) / 0.7))
-            base = INK if text.bold else DIM
-            text.color = (*base, int(255 * alpha))
+            base = theme.INK if text.bold else theme.MUTED
+            text.color = theme.with_alpha(base, alpha)
         if self._footer:
             done = len(self._texts) * LINE_DELAY + 1.0
             alpha = max(0.0, min(1.0, (self.elapsed - done) / 0.8))
-            self._footer.color = (*FAINT, int(220 * alpha))
+            self._footer.color = theme.with_alpha(theme.SUBTLE, 0.86 * alpha)
 
     def on_draw(self) -> None:
         self.clear()
@@ -76,5 +76,3 @@ class ChronicleView(arcade.View):
             # A new life, without leaving the program. Nothing carries over.
             self.app.show_naming()
 
-
-__all__ = ["ChronicleView", "config"]

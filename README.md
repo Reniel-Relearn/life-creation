@@ -273,6 +273,33 @@ layer, or draws from the global `random` stream.
 
 ---
 
+## 🎨 Look and feel
+
+The whole game is a cold world with one warm thing in it. Everything is slate
+and ash except fire, which is the only warm colour on the screen and the only
+thing keeping you alive.
+
+`presentation/theme.py` is the single source for colour, type and spacing, and
+two rules are enforced by tests rather than by taste:
+
+- **Contrast.** Every colour that carries meaning clears WCAG AA (4.5:1)
+  against the backdrop. The palette this replaced had a grey at 2.68:1 doing
+  real work in the opening menu and the event log, which is why both looked
+  washed out.
+- **A strict type scale.** Six sizes, no in-between, and bold in exactly two
+  places — the opening question and the last line of the chronicle. A test
+  parses every screen and fails the build on a seventh size. Monospace loses
+  its character when it is rescaled at whim.
+
+The world itself is drawn in layers: a flat backing so unexplored country has
+an edge, terrain tinted by what you have seen and what you can see now, sight
+that fades softly at its limit instead of ending in a rectangle, additive fire
+light, an ambient wash that eases between dawn, day, dusk and night, and a
+vignette to settle the eye. The interface sits on gradient scrims, so no panel
+ever cuts a hard seam across the scene.
+
+---
+
 ## 📁 Project structure
 
 ```
@@ -313,6 +340,7 @@ life-creation/
 │       ├── lighting.py         ambient wash, fire light, day and night
 │       ├── particles.py        embers, bounded
 │       ├── tile_renderer.py    batched terrain and fog of war
+│       ├── theme.py           colour, type scale, spacing - one source
 │       ├── smoke.py            the graphical smoke test
 │       └── views/              opening, naming, play, pause, help, chronicle
 ├── tests/                      unit, integration, simulation, smoke
@@ -327,9 +355,10 @@ life-creation/
 python -m pytest
 ```
 
-284 tests covering the clock, world generation and validation, movement and the
+304 tests covering the clock, world generation and validation, movement and the
 input lock, Body decay and death, Soul narrowing, Spirit's invisibility, every
-action, fire, the chronicle, determinism, and the architectural rules above.
+action, fire, the chronicle, determinism, the architectural rules above, and the
+visual contract below.
 
 Tests drive the game the same way the game does — through `Session` and
 `Command` — so a passing test means the real path works.
@@ -477,4 +506,4 @@ MIT — see [LICENSE](LICENSE).
 ---
 
 **Status:** 🚧 Playable — graphical first-night vertical slice
-**Last updated:** 3 August 2026
+**Last updated:** 4 August 2026

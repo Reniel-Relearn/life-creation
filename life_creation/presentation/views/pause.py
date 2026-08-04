@@ -15,11 +15,11 @@ class PauseView(Quiet):
     def __init__(self, app, play_view):
         super().__init__(
             title="Paused",
-            lines=(
-                "Esc      back to the world",
-                "H        controls",
-                "N        begin another life",
-                "Ctrl+Q   quit",
+            items=(
+                ("Esc", "back to the world"),
+                ("H", "controls"),
+                ("N", "begin another life"),
+                ("Ctrl+Q", "quit"),
             ),
             footer="Nothing moves while this is open.",
         )
