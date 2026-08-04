@@ -10,16 +10,21 @@ visible; it asks.
 
 from __future__ import annotations
 
+import math
+
 import arcade
 
 from .. import config
 from ..world import TerrainType, World
-from . import space
+from . import space, theme
 from .assets import Assets
 
-UNSEEN = 0
-REMEMBERED = 1
-VISIBLE = 2
+# Sight does not stop at a wall. The last couple of tiles fade out, so the edge
+# of vision reads as the edge of vision rather than as a rectangular hole cut
+# in the world. Brightness is quantised so that only tiles whose step actually
+# changed are re-tinted on a turn.
+FALLOFF_TILES = 2.5
+BRIGHTNESS_STEPS = 10
 
 
 class TileRenderer:
@@ -29,9 +34,10 @@ class TileRenderer:
         self.sprites = arcade.SpriteList()
         self._by_tile: dict[tuple[int, int], arcade.Sprite] = {}
         self._water: list[arcade.Sprite] = []
-        self._state: dict[tuple[int, int], int] = {}
+        self._level: dict[tuple[int, int], int] = {}
         self._water_frame = 0
         self._water_timer = 0.0
+        self.world_pixels = space.world_pixel_size(world.width, world.height)
         self._build()
 
     def _build(self) -> None:
@@ -45,38 +51,69 @@ class TileRenderer:
                 sprite.alpha = 0
                 self.sprites.append(sprite)
                 self._by_tile[(x, y)] = sprite
-                self._state[(x, y)] = UNSEEN
+                self._level[(x, y)] = -1
                 if tile.terrain.key is TerrainType.WATER:
                     self._water.append(sprite)
 
     # -- fog of war ---------------------------------------------------------
 
-    def refresh(self, visible: frozenset[tuple[int, int]]) -> None:
-        """Re-tint only the tiles whose visibility actually changed."""
-        for (x, y), sprite in self._by_tile.items():
-            if (x, y) in visible:
-                wanted = VISIBLE
-            elif self.world.at(x, y).seen:
-                wanted = REMEMBERED
-            else:
-                wanted = UNSEEN
+    def refresh(self, visible: frozenset[tuple[int, int]],
+                sources: list[tuple[int, int, int]]) -> None:
+        """Re-tint the tiles whose brightness step changed.
 
-            if self._state[(x, y)] == wanted:
+        `sources` are the things that light the world - the character, and every
+        lit fire - as (x, y, radius). The simulation decides what is visible;
+        this only decides how softly the edge of it fades.
+        """
+        for (x, y), sprite in self._by_tile.items():
+            seen = self.world.at(x, y).seen
+            if (x, y) in visible:
+                brightness = self._brightness(x, y, sources)
+            else:
+                brightness = 0.0
+
+            if brightness > 0.0:
+                level = 2 + int(brightness * BRIGHTNESS_STEPS)
+            elif seen:
+                level = 1
+            else:
+                level = 0
+
+            if self._level[(x, y)] == level:
                 continue
-            self._state[(x, y)] = wanted
-            self._apply(sprite, wanted)
+            self._level[(x, y)] = level
+            self._apply(sprite, level, brightness)
 
     @staticmethod
-    def _apply(sprite: arcade.Sprite, state: int) -> None:
-        if state == VISIBLE:
-            sprite.alpha = int(255 * config.FOG_VISIBLE)
-            sprite.color = (255, 255, 255, sprite.alpha)
-        elif state == REMEMBERED:
-            # Recognisable, but subdued and drained of colour.
-            level = int(255 * config.FOG_REMEMBERED)
-            sprite.color = (level, level, int(level * 1.15), 255)
-        else:
-            sprite.alpha = int(255 * config.FOG_UNSEEN)
+    def _brightness(x: int, y: int, sources) -> float:
+        """1.0 at the centre of sight, easing to 0 at its edge."""
+        best = 0.0
+        for sx, sy, radius in sources:
+            distance = math.hypot(x - sx, y - sy)
+            inner = max(0.0, radius - FALLOFF_TILES)
+            if distance <= inner:
+                return 1.0
+            fade = 1.0 - (distance - inner) / FALLOFF_TILES
+            best = max(best, fade)
+        return max(0.0, min(1.0, best))
+
+    @staticmethod
+    def _apply(sprite: arcade.Sprite, level: int, brightness: float) -> None:
+        if level == 0:                       # never seen
+            sprite.alpha = 0
+            return
+        if level == 1:                       # remembered: subdued, cooled off
+            tint = int(255 * config.FOG_REMEMBERED)
+            sprite.color = (tint, tint, int(tint * 1.18), 255)
+            return
+
+        # In sight. Fade towards the remembered tone rather than to nothing, so
+        # the edge of vision dissolves instead of ending.
+        low = config.FOG_REMEMBERED
+        value = low + (1.0 - low) * brightness
+        tint = int(255 * value)
+        cool = int(min(255, tint * (1.0 + 0.18 * (1.0 - brightness))))
+        sprite.color = (tint, tint, cool, 255)
 
     # -- presentation only --------------------------------------------------
 
@@ -94,4 +131,11 @@ class TileRenderer:
             sprite.texture = texture
 
     def draw(self) -> None:
+        # A flat backing across the whole map first. Without it, unseen ground
+        # is the window's own background and the world has no edge - which read
+        # as an unfinished screen rather than as country you have not walked.
+        # It is a single uniform colour, so it gives away nothing about what is
+        # out there.
+        width, height = self.world_pixels
+        arcade.draw_lbwh_rectangle_filled(0, 0, width, height, theme.UNKNOWN_LAND)
         self.sprites.draw()

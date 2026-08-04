@@ -22,6 +22,7 @@ from PIL import Image, ImageDraw
 
 from .. import config
 from ..world import TerrainType
+from . import theme
 
 log = logging.getLogger(__name__)
 
@@ -207,6 +208,70 @@ def _dot_image(size: int, colour: tuple[int, int, int, int]) -> Image.Image:
     return img
 
 
+def _scrim_image(colour: tuple[int, int, int], height: int = 256,
+                 strength: float = 0.92, solid_at_top: bool = False) -> Image.Image:
+    """A vertical wash: solid at one edge, gone at the other.
+
+    Drawn behind the HUD so the interface sits on darkness that fades into the
+    world. A flat panel gives the scene a hard horizontal seam; this does not.
+    """
+    img = Image.new("RGBA", (8, height), (0, 0, 0, 0))
+    draw = ImageDraw.Draw(img)
+    for y in range(height):
+        t = (y / (height - 1)) if solid_at_top else 1.0 - (y / (height - 1))
+        alpha = int(255 * strength * (t ** 1.7))
+        draw.line((0, y, 8, y), fill=(*colour, alpha))
+    return img
+
+
+def _corner_scrim_image(colour: tuple[int, int, int], size: int = 256,
+                        strength: float = 0.92) -> Image.Image:
+    """A wash that fades on both axes: solid top-left, gone right and below.
+
+    The single-axis version left a hard vertical edge where it stopped, which
+    was visible straight across the map. Fading horizontally too means the
+    reading surface behind the log has no edge at all.
+    """
+    img = Image.new("RGBA", (size, size), (0, 0, 0, 0))
+    pixels = img.load()
+    # Hold the wash at full strength across the area the text actually
+    # occupies, then fade. A gradient that starts falling off immediately
+    # leaves the middle of a sentence sitting on bright grass.
+    hold_across, hold_down = 0.52, 0.62
+
+    def shaped(t: float, hold: float, power: float) -> float:
+        if t >= hold:
+            return 1.0
+        return (t / hold) ** power
+
+    for y in range(size):
+        down = 1.0 - (y / (size - 1))          # 1 at the top row
+        v = shaped(down, hold_down, 1.4)
+        if v <= 0.0:
+            continue
+        for x in range(size):
+            across = 1.0 - (x / (size - 1))    # 1 at the left column
+            alpha = strength * v * shaped(across, hold_across, 1.1)
+            if alpha > 0.002:
+                pixels[x, y] = (*colour, int(255 * alpha))
+    return img
+
+
+def _vignette_image(size: int = 320, strength: float = 0.55) -> Image.Image:
+    """Darkness gathering in the corners. Frames the scene and settles the eye."""
+    img = Image.new("RGBA", (size, size), (0, 0, 0, 0))
+    pixels = img.load()
+    centre = (size - 1) / 2.0
+    for y in range(size):
+        for x in range(size):
+            d = math.hypot(x - centre, y - centre) / centre
+            if d <= 0.55:
+                continue
+            t = min(1.0, (d - 0.55) / 0.45)
+            pixels[x, y] = (0, 0, 0, int(255 * strength * t * t))
+    return img
+
+
 @dataclass
 class Assets:
     """Loaded once at start-up. Nothing reads a file inside a draw loop."""
@@ -217,6 +282,10 @@ class Assets:
     light: arcade.Texture | None = None
     fire_light: arcade.Texture | None = None
     ember: arcade.Texture | None = None
+    scrim: arcade.Texture | None = None
+    scrim_top: arcade.Texture | None = None
+    scrim_corner: arcade.Texture | None = None
+    vignette: arcade.Texture | None = None
     sounds: dict[str, object] = field(default_factory=dict)
     missing: list[str] = field(default_factory=list)
 
@@ -259,6 +328,11 @@ def load(tile_size: int = config.TILE_SIZE) -> Assets:
     assets.light = arcade.Texture(_radial_image(128, (110, 116, 150), 2.4))
     assets.fire_light = arcade.Texture(_radial_image(160, (255, 168, 74), 1.9))
     assets.ember = arcade.Texture(_dot_image(6, (255, 186, 96, 255)))
+    assets.scrim = arcade.Texture(_scrim_image(theme.SCRIM))
+    assets.scrim_top = arcade.Texture(
+        _scrim_image(theme.SCRIM, solid_at_top=True))
+    assets.scrim_corner = arcade.Texture(_corner_scrim_image(theme.SCRIM))
+    assets.vignette = arcade.Texture(_vignette_image())
 
     assets.sounds = _load_sounds(assets)
     return assets

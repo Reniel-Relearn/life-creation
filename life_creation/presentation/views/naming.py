@@ -8,7 +8,8 @@ from __future__ import annotations
 
 import arcade
 
-from .base import BACKDROP, DIM, FAINT, FONT, INK
+from .. import theme
+from .base import FONT
 
 NAME_FIELD = 0
 SEED_FIELD = 1
@@ -30,32 +31,34 @@ class NamingView(arcade.View):
         self._texts: dict[str, arcade.Text] = {}
 
     def on_show_view(self) -> None:
-        self.window.background_color = BACKDROP
+        self.window.background_color = theme.BACKDROP
         w, h = self.window.width, self.window.height
         make = arcade.Text
         self._texts = {
-            "prompt": make("What is your name?", w // 2, h * 0.62, INK, 20,
-                           font_name=FONT, anchor_x="center"),
-            "name": make("", w // 2, h * 0.52, INK, 22, font_name=FONT,
-                         anchor_x="center", bold=True),
-            "seed_label": make("seed (optional - the same seed is the same world)",
-                               w // 2, h * 0.38, FAINT, 11, font_name=FONT,
-                               anchor_x="center"),
-            "seed": make("", w // 2, h * 0.32, DIM, 15, font_name=FONT,
-                         anchor_x="center"),
+            "prompt": make("What is your name?", w // 2, h * 0.60, theme.MUTED,
+                           theme.TITLE, font_name=FONT, anchor_x="center"),
+            "name": make("", w // 2, h * 0.60 - theme.SPACE_6, theme.INK,
+                         theme.TITLE, font_name=FONT, anchor_x="center"),
+            "seed_label": make("seed - optional. The same seed is the same world.",
+                               w // 2, h * 0.36, theme.SUBTLE, theme.SMALL,
+                               font_name=FONT, anchor_x="center"),
+            "seed": make("", w // 2, h * 0.36 - theme.SPACE_4, theme.MUTED,
+                         theme.BODY, font_name=FONT, anchor_x="center"),
             "footer": make("Tab  switch field      Enter  begin      Esc  back",
-                           w // 2, h * 0.14, FAINT, 12, font_name=FONT,
-                           anchor_x="center"),
+                           w // 2, h * 0.12, theme.SUBTLE, theme.SMALL,
+                           font_name=FONT, anchor_x="center"),
         }
 
     def on_update(self, delta_time: float) -> None:
         self.caret = (self.caret + delta_time) % 1.0
         blink = "_" if self.caret < 0.55 else " "
         self._texts["name"].text = self.name + (blink if self.field == NAME_FIELD else "")
-        self._texts["name"].color = INK if self.field == NAME_FIELD else DIM
+        self._texts["name"].color = (theme.INK if self.field == NAME_FIELD
+                                     else theme.MUTED)
         seed_text = self.seed or ("" if self.field == SEED_FIELD else "any")
         self._texts["seed"].text = seed_text + (blink if self.field == SEED_FIELD else "")
-        self._texts["seed"].color = INK if self.field == SEED_FIELD else FAINT
+        self._texts["seed"].color = (theme.INK if self.field == SEED_FIELD
+                                     else theme.SUBTLE)
 
     def on_draw(self) -> None:
         self.clear()
